@@ -2,7 +2,7 @@
 https通信无处不在，介绍文章也很多，但总是觉得网上知识点比较零散、书籍如tcp/ip协议详解之类的教科书又过于注重细节，本文的初衷是综合各方面资源的知识，串联起来，把https通信过程这只大象全貌展示出来，而不是只是展示一只象腿被初学者理解为柱子，或者过于详细而陷入知识汪洋而迷茫。
 ### 网络请求的流程图
 - 一段文字或者图片，从一台电脑通过因特网发送并显示在另外一台电脑的屏幕上，这段数据传输的整个过程，可以看到网络通信的全貌。接下来的篇幅以A发送“您好！”到b显示的过程，讲解网络通信的过程。网络请求的整体流程可以简单浓缩为下图：
-![](https://raw.githubusercontent.com/flybear123/MyBlog/develop/images/generalFlow.png)
+![](https://github.com/flybear123/flybear123.github.io/blob/master/images/generalFlow.png?raw=true)
 - 根据实际的过程，可以分为三个过程：建立连接过程，发送和接收数据过程，断开连接过程
 
 ### 建立连接过程
