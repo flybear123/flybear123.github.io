@@ -1,0 +1,251 @@
+# 网络请求观察者设计模式
+
+- 所有的设计模式，都在做类似的事情：解耦合，UI和数据分离，业务逻辑的剥离。常用的优秀网络第三方库，AFNetworking和Amofire，在实现网络请求的时候，大部分都是使用block的方式获得数据处理结果，在block中进行网络的处理。在通常的开发中，ViewController发起一个请求，需要写对应的业务逻辑在block内，如果需要处理的逻辑比较多，需要抽取方法出来实现逻辑。如果一个控制器有很多的网络请求，代码的网络请求处理就需要统一做管理，让请求处理的部分统一，便于阅读，且清晰化分类。假设另外一个控制器需要同步网络返回内容更新数据，还需要代理或者通知出去。相信具有一定开发经验的你都有类似的经历，控制器里面的请求写多了，就需要专门管理起来避免杂乱，直接在block里面写逻辑的方法就捉襟见肘了。 
+- 针对此问题，解决方法有很多种，这里介绍一下我们采用的观察者模式，很适合用在具有多个请求在同一页面实现，具有多个页面需要根据网络请求进行刷新的场景。观察者模式统一管理请求，每个需要使用返回数据的地方加个观察就能方便的获得网络数据，同时也避免了因为众多网络请求导致massive Controller的出现。先以OC实现进行讲解。
+
+### 观察者模式的设计图
+
+![](https://raw.githubusercontent.com/flybear123/flybear123.github.io/master/images/observerRelationship.png)
+
+
+### 观察者模式的核心基础代码
+
+对应核心基础代码的github下载地址[netObserverDemo](https://github.com/flybear123/netObserverDemo)
+
+基础代码实现的主要功能是对观察者的添加，删除，发送事件的实现。管理类方法只要继承此BaseObserver类既可以方便的实现网络管理类。
+基础代码的核心实现如下
+
+```
+#import "FBBaseNetObserver.h"
+
+@interface  FBBaseNetObserver()
+{
+    dispatch_semaphore_t _semaphore;
+}
+
+@property (nonatomic, strong) NSMutableArray *observerList;
+@property (nonatomic, strong) NSArray *observers;
+
+@end
+
+
+@implementation FBBaseNetObserver
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        _observerList = [[NSMutableArray alloc] initWithCapacity:3];
+        _semaphore = dispatch_semaphore_create(1);
+        
+    }
+    return self;
+}
+
+
+- (void)addObserver:(id)observer {
+    if (!observer || ![observer isKindOfClass:[NSObject class]]) {
+        NSLog(@"observer is nil or not object class");
+        return;
+    }
+    
+    FBWeakProxy *proxy  = [[FBWeakProxy alloc] init];
+    proxy.object = observer;
+    if (![_observerList containsObject:proxy]) {
+        [_observerList addObject:proxy];
+    }
+    
+}
+
+- (void)removeObserver:(id)observer {
+    for (int i = 0; i < _observerList.count; i++) {
+        FBWeakProxy *proxy = [_observerList objectAtIndex:i];
+        if (proxy.object == observer) {
+            [_observerList removeObject:proxy];
+            break;
+        }
+    }
+}
+
+- (void)sendObserversEvent:(SEL)sel {
+    [self sendEventObservers:sel withObject:self];
+}
+
+- (void)sendEventObservers:(SEL)selector withObject:(id)param {
+    dispatch_semaphore_wait(_semaphore, DISPATCH_TIME_FOREVER);
+    NSArray *list = self.observerList;
+    for (id object in list) {
+        if ([object respondsToSelector:selector]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [object performSelector:selector withObject:param];
+        #pragma clang diagnostic pop
+        }
+    }
+    dispatch_semaphore_signal(_semaphore);
+}
+
+- (void)sentEventObservers:(SEL)selector withObject:(id)param1 withObject:(id)param2 {
+    dispatch_semaphore_wait(_semaphore, DISPATCH_TIME_FOREVER);
+    NSArray *list = self.observerList;
+    for (id object in list) {
+        if ([object respondsToSelector:selector]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [object performSelector:selector withObject:param1 withObject:param2];
+        #pragma clang diagnostic pop
+        }
+    }
+    dispatch_semaphore_signal(_semaphore);
+}
+
+- (NSArray *)observers {
+    NSMutableArray *array = [[NSMutableArray alloc] initWithCapacity:_observerList.count];
+    NSMutableArray *deleteArray = [[NSMutableArray alloc] init];
+    
+    for (FBWeakProxy *proxy in _observerList) {
+        if (proxy.object == nil) {
+            [deleteArray addObject:proxy];
+        } else {
+            [array addObject:proxy.object];
+        }
+    }
+    [_observerList removeObjectsInArray:deleteArray];
+    
+    return array;
+    
+}
+
+
+@end
+
+
+@implementation FBWeakProxy
+
+- (BOOL)isEqual:(id)object {
+    if ([object isMemberOfClass:[FBWeakProxy class]]) {
+        FBWeakProxy *proxy = (FBWeakProxy *)object;
+        return proxy.object == _object;
+    }
+    
+    return NO;
+}
+
+@end
+
+
+```
+
+### 观察者模式的demo
+- 登陆相关模块的网络管理类
+
+```
+@implementation FBLoginNetManager
+
++ (instancetype)shared {
+    static FBLoginNetManager *loginManager;
+    static dispatch_once_t once;
+    _dispatch_once(&once, ^{
+        if (!loginManager){
+            loginManager = [[FBLoginNetManager alloc] init];
+        }
+    });
+    return loginManager;
+}
+
+- (void)loginRequest {
+    BOOL success = false;
+    NSDictionary *dict;
+    if (success) {
+        [self sentEventObservers:@selector(requestLoginInfoSuccess:withObject:) withObject:self withObject:dict];
+    } else {
+        [self sendEventObservers:@selector(requestLoginInfoFailed:) withObject:self];
+    }
+}
+
+
+@end
+
+```
+
+管理类头文件暴露方法，并提供observe协议实现对应的观察方法
+
+```
+#import <Foundation/Foundation.h>
+#import "FBBaseNetObserver.h"
+//#import "FBLoginNetManager.h"
+@class FBLoginNetManager;
+@protocol FGLoginNetObserver <NSObject>
+
+- (void)requestLoginInfoSuccess:(FBLoginNetManager *_Nullable)manager withObject:(NSDictionary *_Nullable)dict;
+
+- (void)requestLoginInfoFailed:(FBLoginNetManager *_Nullable)manager;
+@end
+
+NS_ASSUME_NONNULL_BEGIN
+
+@interface FBLoginNetManager : FBBaseNetObserver
+
++ (instancetype)shared;
+
+- (void)loginRequest;
+
+@end
+
+NS_ASSUME_NONNULL_END
+
+```
+
+### 业务实现举例
+实现好管理类和观察通知之后，业务层就可以方便的使用相关的网络请求了。以登陆的方法举例，建立LoginViewController，1.添加观察者 2.发送网络请求 3.添加网络请求结果处理方法
+代码实现如下：
+
+
+```
+#import "LoginViewController.h"
+#import "FBBaseNetObserver.h"
+#import "FBLoginNetManager.h"
+@interface LoginViewController ()
+
+@end
+
+@implementation LoginViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    //添加观察
+    [[FBLoginNetManager shared] addObserver:self];
+    //发起网络请求
+    [[FBLoginNetManager shared] loginRequest];
+    // Do any additional setup after loading the view.
+}
+
+
+#pragma mark -- LoginNetObserver
+
+- (void)requestLoginInfoSuccess:(FBLoginNetManager *_Nullable)manager withObject:(NSDictionary *_Nullable)dict {
+    //处理网络请求成功
+}
+
+- (void)requestLoginInfoFailed:(FBLoginNetManager *_Nullable)manager {
+    //处理网络请求失败
+}
+
+/*
+#pragma mark - Navigation
+
+// In a storyboard-based application, you will often want to do a little preparation before navigation
+- (void)prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender {
+    // Get the new view controller using [segue destinationViewController].
+    // Pass the selected object to the new view controller.
+}
+*/
+
+@end
+
+
+
+```
+
+
+
