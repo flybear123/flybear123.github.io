@@ -1,0 +1,62 @@
+# 网络请求观察者设计模式
+
+鉴于当前的swift已经是很多公司开发的主流语言，这里提供网络请求观察者模式的Swift实现方式， 主要提供基础代码的实现，使用方式跟OC版本思路是一致的，都是通过观察的形式，实现网络请求的回调。
+### 基础代码
+
+```
+
+public protocol FBObserveable {
+    
+    init(identifier: String)
+    //唯一的ID
+    var identifier: String { get set }
+    
+    func addObserver(_ obs: AnyHashable)
+    func removeObserver(_ obs: AnyHashable)
+    
+}
+
+
+public extension FBObserveable {
+    func addObserver(_ obs: AnyHashable) {}
+    func removeObserver(_ obs: AnyHashable) {}
+}
+
+//通过闭包进行观察的Event
+public protocol FBObserveableEvent: FBObserveable {
+    //Input作为 通知参数
+    associatedtype Input
+    
+
+    /// - Parameters:
+    ///   - obs: 观察者
+    ///   - closure: 以Input作为参数通知观察者的闭包
+    ///   观察者需要Conform协议: Observer, Hashable
+    ///   会在【主线程】上进行通知
+    
+    func addObserver<H>(_ obs: H, closure: @escaping (Input) -> ()) where H: Hashable, H: Observer
+    
+    
+    /// - Parameter obs: 观察者
+    func removeObserver<H>(_ obs: H) where H: Hashable, H: Observer
+   
+    func notify(input: Input)
+        
+}
+
+//该协议用于归类一个类具有多个可被观察事件的对象
+//方便移除观察者的时候统一将该类下的所有事件都移除
+public protocol EventGroup {
+    static var eventList: [FBObserveable] { get }
+    static func removeObserver(_ obs: AnyHashable)
+}
+
+extension EventGroup {
+    public static func removeObserver(_ obs: AnyHashable) {
+        eventList.forEach { (poster) in
+            poster.removeObserver(obs)
+        }
+    }
+}
+
+```
